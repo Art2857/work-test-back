@@ -1,4 +1,4 @@
-import { Sequelize, Dialect } from 'sequelize';
+import { Sequelize, Dialect, PoolOptions } from 'sequelize';
 import { UserInit } from './models/user.model';
 
 export class DatabaseManager {
@@ -10,16 +10,19 @@ export class DatabaseManager {
         password,
         host,
         dialect,
+        pool,
     }: {
         database: string;
         username: string;
         password?: string;
         host?: string;
         dialect?: Dialect;
+        pool?: PoolOptions;
     }) {
         this.connection = new Sequelize(database, username, password, {
             host,
             dialect,
+            pool,   
             logging: false,
         });
 
