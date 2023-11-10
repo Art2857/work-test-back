@@ -2,7 +2,7 @@ export type Optional<T> = T | undefined;
 
 export type Nullable<T> = T | null;
 
-export type Emptyble<T> = T | undefined | null;
+export type Emptyble<T> = T | undefined | null | void;
 
 export type Newable<T> = new (...args: any[]) => T;
 

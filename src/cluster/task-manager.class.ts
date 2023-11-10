@@ -162,9 +162,9 @@ export class TaskManager {
         return this._mappingWorkerByTask.get(task);
     }
 
-    private _mappingTaskWaiting = new Map<Task, (event: any) => boolean | Promise<boolean>>();
+    private _mappingTaskWaiting = new Map<Task, (event: any) => Emptyble<Worker> | Promise<Emptyble<Worker>>>();
 
-    private mappingTaskWaitingAdd(task: Task, condition: (event: any) => boolean | Promise<boolean>) {
+    private mappingTaskWaitingAdd(task: Task, condition: (event: any) => Emptyble<Worker> | Promise<Emptyble<Worker>>) {
         return this._mappingTaskWaiting.set(task, condition);
     }
 
@@ -183,11 +183,13 @@ export class TaskManager {
     }
 
     /** Возвращает работника с наименьшим стрессом */
-    leastStress() {
+    leastStress(workers?: Worker[]) {
         let leastStress = Infinity;
         let leastStressWorker: Nullable<Worker> = null;
 
-        const { workers } = this.workers;
+        if (!workers) {
+            workers = this.workers.workers;
+        }
 
         for (const worker of workers) {
             const stress = this.getStress(worker);
@@ -209,26 +211,30 @@ export class TaskManager {
         this[EmitterSymbol].subscribe((event) => {
             this._mappingTaskWaiting.forEach(async (condition, task) => {
                 try {
-                    if (await condition(event)) {
-                        let worker: Emptyble<Worker> = this.getWorkerByTask(task);
+                    const worker = await condition(event);
+                    if (!worker) {
+                        return console.log(`Couldn't find worker for task ${task.name}`);
+                    }
+                    // let worker: Emptyble<Worker> = this.getWorkerByTask(task);
 
-                        // Если нету исполнителя для задачи, то ищем работника с наименьшим стрессом
-                        if (!worker) {
-                            worker = this.leastStress();
+                    // // Если нету исполнителя для задачи, то ищем работника с наименьшим стрессом
+                    // if (!worker) {
+                    //     worker = this.leastStress();
 
-                            if (!worker) {
-                                console.log(`Couldn't find worker for task ${task.name}`);
-                                return;
-                            }
+                    //     if (!worker) {
+                    //         console.log(`Couldn't find worker for task ${task.name}`);
+                    //         return;
+                    //     }
 
-                            this.mappingByWorkerAdd(task, worker);
-                        }
+                    //     this.mappingByWorkerAdd(task, worker);
+                    // }
 
-                        this.mappingTaskWaitingRemove(task);
+                    this.mappingByWorkerAdd(task, worker);
 
-                        if (task.status === TaskStatusEnum.Pending) {
-                            task.running();
-                        }
+                    this.mappingTaskWaitingRemove(task);
+
+                    if (task.status === TaskStatusEnum.Pending) {
+                        task.running();
                     }
                 } catch (error) {
                     task.reject(error);
@@ -271,7 +277,7 @@ export class TaskManager {
         return this._mappingById.getLeft(task) !== undefined;
     }
 
-    addFor(task: Task, worker: Worker, condition: (event: any) => boolean | Promise<boolean> = () => true) {
+    addFor(task: Task, worker: Worker, condition: (event: any) => Worker | Promise<Worker>) {
         if (this.isExists(task)) {
             throw new Error(`Task ${task.name} already exists`);
         }
@@ -287,7 +293,7 @@ export class TaskManager {
         return task;
     }
 
-    add(task: Task, condition: (event: any) => boolean | Promise<boolean> = () => true) {
+    add(task: Task, condition: (event: any) => Emptyble<Worker> | Promise<Emptyble<Worker>>) {
         if (this.isExists(task)) {
             throw new Error(`Task ${task.name} already exists`);
         }
