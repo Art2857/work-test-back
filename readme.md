@@ -12,11 +12,15 @@ Primary находится на порту 4000
 Воркеры находятся на порту 3000
 
 http://localhost:4000/tasks - Получение списка исполняемых задач
+
 http://localhost:4000/tasks/workers - Получение списка воркеров и их задач
+
 http://localhost:4000/tasks/general-stress - Получение общего стресса
+
 http://localhost:4000/tasks/history?page=2&limit=10 - Получаем список выполненных задач
 
 http://localhost:3000/user/1/balance (put) - изменяем баланс пользователя
+
 http://localhost:3000/user/test (post) - запускаем тест (После правок со вторым заданием желательно поменять и сам тест)
 ___
 
