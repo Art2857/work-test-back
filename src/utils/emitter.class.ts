@@ -5,7 +5,7 @@ export const EmitterSymbol = Symbol();
 export class Emitter<T> {
     static readonly Symbol = Symbol();
 
-    private readonly subject: BehaviorSubject<T>;
+    private readonly _subject: BehaviorSubject<T>;
 
     private readonly _subscriptions: Set<Subscription> = new Set();
 
@@ -14,15 +14,15 @@ export class Emitter<T> {
     }
 
     constructor(value?: T) {
-        this.subject = new BehaviorSubject<T>(value ?? (undefined as unknown as T));
+        this._subject = new BehaviorSubject<T>(value ?? (undefined as unknown as T));
     }
 
     emit(value: T) {
-        this.subject.next(value);
+        this._subject.next(value);
     }
 
     subscribe(observerOrNext?: (value: T) => void) {
-        const subscription = this.subject.pipe(skip(1)).subscribe(observerOrNext);
+        const subscription = this._subject.pipe(skip(1)).subscribe(observerOrNext);
 
         this._subscriptions.add(subscription);
 

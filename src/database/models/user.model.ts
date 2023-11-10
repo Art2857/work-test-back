@@ -23,7 +23,7 @@ export const UserAttributes = {
             min: 0,
         },
     },
-};
+}; 
 
 export const UserInit = async (sequelize: Sequelize) => {
     UserModel.init(UserAttributes, {

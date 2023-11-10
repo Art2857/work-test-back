@@ -1,5 +1,6 @@
 import { Sequelize, Dialect, PoolOptions } from 'sequelize';
 import { UserInit } from './models/user.model';
+import { TaskInit } from './models/tasks.model';
 
 export class DatabaseManager {
     readonly connection: Sequelize;
@@ -31,6 +32,7 @@ export class DatabaseManager {
 
     private init() {
         UserInit(this.connection);
+        TaskInit(this.connection);
 
         return this;
     }

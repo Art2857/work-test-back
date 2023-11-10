@@ -1,48 +1,46 @@
-import { EmitterSymbol, Emitter } from '../utils/emitter.class';
+import { Emitter, EmitterSymbol } from '../utils/emitter.class';
 import { Function, Nullable } from '../utils/types';
 
-export class TaskEventSetId {
-    constructor(readonly previous: Nullable<number>, readonly id: Nullable<number>) {}
+/** Статус изменён на "выполняется" */
+export class TaskEventRunning<T extends any[] = any[]> {
+    constructor(readonly params?: T) {}
 }
 
-export class TaskEventSuccess {
-    constructor(readonly result: any, readonly params?: any[]) {}
+/** Статус изменён на "успешно" */
+export class TaskEventSuccess<T extends any[] = any[]> {
+    constructor(readonly result: any, readonly params?: T) {}
 }
 
+/** Статус изменён на "ошибку" */
 export class TaskEventReject {
     constructor(readonly error?: Error) {}
 }
 
-export type TaskEvents = TaskEventSetId | TaskEventSuccess | TaskEventReject;
+export type TaskEvents = TaskEventRunning | TaskEventSuccess | TaskEventReject;
 
 export enum TaskStatusEnum {
     Pending = 'pending',
     Running = 'running',
-    Success = 'success',
-    Reject = 'reject',
+    Successed = 'successed',
+    Rejected = 'rejected',
     // Cancled = 'canceled',
 }
 
-export class Task<T extends Function = Function> {
-    public [EmitterSymbol] = new Emitter<TaskEvents>();
+export class Task {
+    public readonly [EmitterSymbol] = new Emitter<TaskEvents>();
 
     readonly name: string;
+
     private _start: Nullable<Date> = null;
-    private _end: Nullable<Date> = null;
-    public params?: any[];
 
-    private _id: Nullable<number> = null;
-
-    get id() {
-        return this._id;
+    get start() {
+        return this._start;
     }
 
-    set id(id: Nullable<number>) {
-        const previous = this._id;
+    private _end: Nullable<Date> = null;
 
-        this._id = id;
-
-        this[EmitterSymbol].emit(new TaskEventSetId(previous, id));
+    get end() {
+        return this._end;
     }
 
     private _status: TaskStatusEnum = TaskStatusEnum.Pending;
@@ -53,44 +51,89 @@ export class Task<T extends Function = Function> {
 
     set status(status: TaskStatusEnum) {
         this._status = status;
+
+        if (status === TaskStatusEnum.Pending) {
+            this._start = null;
+            this._end = null;
+        }
+
+        if (status === TaskStatusEnum.Running) {
+            this._start = new Date();
+
+            this[EmitterSymbol].emit(new TaskEventRunning(this._params));
+        }
+
+        if (status === TaskStatusEnum.Successed || status === TaskStatusEnum.Rejected) {
+            this._end = new Date();
+        }
     }
 
-    get start() {
-        return this._start;
+    /** Функция выполнения задачи */
+    private _perform: Function;
+
+    /** Параметры функции задачи */
+    private _params: any[]; // JSON
+
+    get params() {
+        return this._params;
     }
 
-    get end() {
-        return this._end;
-    }
-
-    readonly perform: T;
-
-    constructor(perform?: T, params?: Parameters<T>, name?: string) {
+    constructor(perform: Function, params: Parameters<typeof perform>, name?: string) {
         this.name = name ?? this.constructor.name;
 
-        this.params = params;
-
-        this.perform = perform ?? (() => {}) as T;
+        this._perform = perform;
+        this._params = params;
     }
 
-    async execute() {
+    running() {
         if (this.status !== TaskStatusEnum.Pending) {
+            console.log(`Task ${this.name} not pending`);
             return false;
         }
 
-        this._start = new Date();
-        this._status = TaskStatusEnum.Running;
+        this.status = TaskStatusEnum.Running;
+
+        return true;
+    }
+
+    success(result: any) {
+        if (this.status !== TaskStatusEnum.Running) {
+            console.log(`Task ${this.name} not running`);
+            return false;
+        }
+
+        this.status = TaskStatusEnum.Successed;
+
+        this[EmitterSymbol].emit(new TaskEventSuccess(result, this._params));
+
+        return true;
+    }
+
+    reject(error: any) {
+        if (this.status !== TaskStatusEnum.Running) {
+            console.log(`Task ${this.name} not running`);
+            return false;
+        }
+
+        this.status = TaskStatusEnum.Rejected;
+
+        this[EmitterSymbol].emit(new TaskEventReject(error));
+
+        return true;
+    }
+
+    /** Исполнение задачи */
+    async execute() {
+        if (!this.running()) {
+            return false;
+        }
 
         try {
-            const result = await this.perform(this.params);
+            const result = await this._perform(...this._params);
 
-            this._end = new Date();
-            this._status = TaskStatusEnum.Success;
-            this[EmitterSymbol].emit(new TaskEventSuccess(result, this.params));
+            this.success(result);
         } catch (error: any) {
-            this._end = new Date();
-            this._status = TaskStatusEnum.Reject;
-            this[EmitterSymbol].emit(new TaskEventReject(error));
+            this.reject(error);
         }
 
         return true;
