@@ -1,5 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
-import { HttpError } from '../utils/error.class';
+import { HttpError } from '../utils/http-error.class';
 
 export function ErrorMiddleware(error: Error, req: Request, res: Response, next: NextFunction) {
     if (error instanceof HttpError) {

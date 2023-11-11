@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response, Router } from 'express';
 import { UserRepository } from '../database/repositories/user.repository';
-import { HttpError } from '../utils/error.class';
+import { HttpError } from '../utils/http-error.class';
 import { UserService } from '../services/user.service';
 
 export const UserRouter = Router();

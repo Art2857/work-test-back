@@ -1,7 +1,7 @@
 import { Op } from 'sequelize';
 import { Database } from '../..';
 import { UserModel } from '../models/user.model';
-import { HttpError } from '../../utils/error.class';
+import { HttpError } from '../../utils/http-error.class';
 
 export class UserRepository {
     static async balanceIncrease(userId: number, amount: number) {
