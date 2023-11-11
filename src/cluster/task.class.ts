@@ -1,13 +1,13 @@
 import { Emitter, EmitterSymbol } from '../utils/emitter.class';
-import { Function, Nullable } from '../utils/types';
+import { Function, Json, Nullable } from '../utils/types';
 
 /** Статус изменён на "выполняется" */
-export class TaskEventRunning<T extends any[] = any[]> {
+export class TaskEventRunning<T extends Json[] = Json[]> {
     constructor(readonly params?: T) {}
 }
 
 /** Статус изменён на "успешно" */
-export class TaskEventSuccess<T extends any[] = any[]> {
+export class TaskEventSuccess<T extends Json[] = Json[]> {
     constructor(readonly result: any, readonly params?: T) {}
 }
 
@@ -29,7 +29,7 @@ export enum TaskStatusEnum {
 export class Task {
     public readonly [EmitterSymbol] = new Emitter<TaskEvents>();
 
-    readonly name: string;
+    readonly name: string = this.constructor.name;
 
     private _start: Nullable<Date> = null;
 
@@ -72,14 +72,15 @@ export class Task {
     private _perform: Function;
 
     /** Параметры функции задачи */
-    private _params: any[]; // JSON
+    private _params: Json[]; // JSON
 
     get params() {
         return this._params;
     }
 
-    constructor(perform: Function, params: Parameters<typeof perform>, name?: string) {
-        this.name = name ?? this.constructor.name;
+    // Можно кое-что было бы доработать с name и mapping для удобного мапинга задач
+    constructor(perform: Function, params: Parameters<typeof perform> /*, name?: string*/) {
+        // this.name = name ?? this.constructor.name;
 
         this._perform = perform;
         this._params = params;

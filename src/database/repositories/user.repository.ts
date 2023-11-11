@@ -1,4 +1,4 @@
-import { Op, Sequelize } from 'sequelize';
+import { Op } from 'sequelize';
 import { Database } from '../..';
 import { UserModel } from '../models/user.model';
 import { HttpError } from '../../utils/error.class';
@@ -10,7 +10,7 @@ export class UserRepository {
         if (!user) {
             throw new HttpError(400, 'User not found');
         }
-        
+
         const [affectedRows] = await UserModel.update(
             { balance: Database.connection.literal(`balance + ${amount}`) },
             { where: { id: userId, balance: { [Op.gte]: -amount } } },
@@ -19,7 +19,7 @@ export class UserRepository {
         if (affectedRows === 0) {
             throw new HttpError(400, 'Баланс пользователя не может быть отрицательным');
         }
-        
+
         return true;
     }
 }

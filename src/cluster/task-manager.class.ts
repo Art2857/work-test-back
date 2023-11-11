@@ -1,4 +1,3 @@
-import { DualMap } from '../utils/dual-map.class';
 import { EmitterSymbol, Emitter } from '../utils/emitter.class';
 import { Emptyble, Nullable, Optional } from '../utils/types';
 import { Task, TaskEvents, TaskStatusEnum } from './task.class';
@@ -7,7 +6,11 @@ import { Worker } from 'cluster';
 
 import { Subscription } from 'rxjs';
 import { Workers, WorkersEvents } from './workers.class';
+import { MappingById } from '../utils/mapping/mapping-by-id.class';
+import { MappingOneToMany } from '../utils/mapping/mapping-one-to-many.class';
+import { Mapping } from '../utils/mapping/mapping.class';
 
+// События класса TaskManager
 export class TaskManagerEventAdd {
     constructor(public id: number, public task: Task, public worker?: Worker) {}
 }
@@ -22,134 +25,76 @@ export class TaskManagerEventTask {
 
 export type EventsTaskManager = TaskManagerEventAdd | TaskManagerEventRemove | TaskManagerEventTask | WorkersEvents;
 
-/**
- * Этот класс декомпозировать по хорошему и разбить на классы...
- */
+export type Condition = (event: any) => Emptyble<Worker> | Promise<Emptyble<Worker>>;
+
+/** Класс для управления задачами */
 export class TaskManager {
     public [EmitterSymbol] = new Emitter<EventsTaskManager>();
 
-    private _nextId = 0;
+    private mappingById = new MappingById<Task>(); // id <-> task
+    private mappingByName = new MappingOneToMany<string, Task>(); // name <-> task[]
+    private mappingByWorker = new MappingOneToMany<Worker, Task>(); // worker <-> task[]
+    private mappingByCondition = new Mapping<Task, Condition>(); // task <-> condition
+    private mappingBySubscription = new Mapping<Task, Subscription>(); // task <-> subscription
 
-    private _mappingById = new DualMap<number, Task>();
+    constructor(readonly workers: Workers) {
+        // Случаем свои события
+        this[EmitterSymbol].subscribe((event) => {
+            // Проверяем стало ли условие исполения задачи истинным, если да, то исполняем
+            this.mappingByCondition.mapping.forEach(async (task, condition) => {
+                try {
+                    const worker = await condition(event);
+                    // Проверяем что условие исполения задачи выполнено
+                    if (!worker) {
+                        return console.log(`Couldn't find worker for task ${task.name}`);
+                    }
 
-    get mappingById() {
-        return new DualMap(this._mappingById);
+                    // Назначаем исполнителя задачи, если ещё не был назначен (работает только для addFor)
+                    if (!this.mappingByWorker.getIdByValue(task)) {
+                        this.mappingByWorker.add(worker, task);
+                    }
+
+                    // Удаляем задачу из ожидающих исполнения
+                    this.mappingByCondition.removeById(task);
+
+                    // Устанавливаем задаче статус исполения, но не запускаем, так как мы не исполнитель
+                    if (task.status === TaskStatusEnum.Pending) {
+                        task.running();
+                    }
+                } catch (error) {
+                    task.reject(error);
+                }
+            });
+        });
+
+        // Подписываемся на события воркеров
+        this.workers[EmitterSymbol].subscribe((event) => {
+            this[EmitterSymbol].emit(event);
+        });
     }
 
     get tasks() {
-        return this._mappingById.valuesRight;
+        return this.mappingById.values;
     }
 
-    private mappingByIdAdd(task: Task) {
-        return this._mappingById.set(this._nextId++, task);
-    }
-
-    private mappingByIdRemove(task: Task) {
-        const id = this._mappingById.getLeft(task);
-
-        if (!id) {
-            return false;
-        }
-
-        return this._mappingById.removeRight(id);
-    }
-
+    /** Возвращает id задачи */
     getIdByTask(task: Task) {
-        return this._mappingById.getLeft(task);
+        return this.mappingById.getIdByValue(task);
     }
 
+    /** Возвращает задачу по id */
     getTaskById(id: number) {
-        return this._mappingById.getRight(id);
+        return this.mappingById.getValueById(id);
     }
 
-    private _mappingByName = new Map<string, Set<Task>>();
-
-    get mappingByName() {
-        return new Map(this._mappingByName);
+    /** Проверяет существование задачи */
+    isExists(task: Task) {
+        return this.mappingById.getIdByValue(task) !== undefined;
     }
 
-    private mappingByNameAdd(task: Task) {
-        const { name } = task;
-
-        let mappingByName = this._mappingByName.get(name);
-
-        if (!mappingByName) {
-            mappingByName = new Set();
-
-            this._mappingByName.set(name, mappingByName);
-        }
-
-        return mappingByName.add(task);
-    }
-
-    private mappingByNameRemove(task: Task) {
-        const { name } = task;
-
-        const mappingByName = this._mappingByName.get(name);
-
-        if (!mappingByName) {
-            return false;
-        }
-        mappingByName.delete(task);
-
-        if (mappingByName.size === 0) {
-            this._mappingByName.delete(name);
-        }
-
-        return true;
-    }
-
-    private _mappingByWorker = new Map<Worker, Set<Task>>(); // { [worker]: Set<Task> }
-    private _mappingWorkerByTask = new Map<Task, Worker>(); // { [task]: worker }
-
-    get mappingByWorkerId() {
-        return new Map(this._mappingByWorker);
-    }
-
-    get mappingWorkerIdByTask() {
-        return new Map(this._mappingWorkerByTask);
-    }
-
-    private mappingByWorkerAdd(task: Task, worker: Worker) {
-        let mappingByWorker = this._mappingByWorker.get(worker);
-
-        if (!mappingByWorker) {
-            mappingByWorker = new Set();
-
-            this._mappingByWorker.set(worker, mappingByWorker);
-        }
-
-        this._mappingWorkerByTask.set(task, worker);
-
-        return mappingByWorker.add(task);
-    }
-
-    private mappingByWorkerRemove(task: Task) {
-        const worker = this._mappingWorkerByTask.get(task);
-
-        if (!worker) {
-            return false;
-        }
-
-        const mappingByWorker = this._mappingByWorker.get(worker);
-
-        if (!mappingByWorker) {
-            return false;
-        }
-
-        mappingByWorker.delete(task);
-
-        if (mappingByWorker.size === 0) {
-            this._mappingByWorker.delete(worker);
-        }
-
-        this._mappingWorkerByTask.delete(task);
-
-        return true;
-    }
-
+    /** Возвращает задачи конкретного исполнителя */
     getTasksByWorker(worker: Worker) {
-        const tasks = this._mappingByWorker.get(worker);
+        const tasks = this.mappingByWorker.getValuesById(worker);
 
         if (!tasks) {
             return [];
@@ -158,31 +103,17 @@ export class TaskManager {
         return [...tasks];
     }
 
+    /** Возвращает исполнителя задачи */
     getWorkerByTask(task: Task): Optional<Worker> {
-        return this._mappingWorkerByTask.get(task);
+        return this.mappingByWorker.getIdByValue(task);
     }
 
-    private _mappingTaskWaiting = new Map<Task, (event: any) => Emptyble<Worker> | Promise<Emptyble<Worker>>>();
-
-    private mappingTaskWaitingAdd(task: Task, condition: (event: any) => Emptyble<Worker> | Promise<Emptyble<Worker>>) {
-        return this._mappingTaskWaiting.set(task, condition);
-    }
-
-    private mappingTaskWaitingRemove(task: Task) {
-        return this._mappingTaskWaiting.delete(task);
-    }
-
+    /** Возвращает стресс воркера */
     getStress(worker: Worker) {
-        const stress = this._mappingByWorker.get(worker)?.size;
-
-        if (!stress) {
-            return null;
-        }
-
-        return stress;
+        return this.getTasksByWorker(worker).length;
     }
 
-    /** Возвращает работника с наименьшим стрессом */
+    /** Возвращает воркера с наименьшим стрессом */
     leastStress(workers?: Worker[]) {
         let leastStress = Infinity;
         let leastStressWorker: Nullable<Worker> = null;
@@ -207,62 +138,22 @@ export class TaskManager {
         return leastStressWorker;
     }
 
-    constructor(readonly workers: Workers) {
-        this[EmitterSymbol].subscribe((event) => {
-            this._mappingTaskWaiting.forEach(async (condition, task) => {
-                try {
-                    const worker = await condition(event);
-                    if (!worker) {
-                        return console.log(`Couldn't find worker for task ${task.name}`);
-                    }
-                    // let worker: Emptyble<Worker> = this.getWorkerByTask(task);
-
-                    // // Если нету исполнителя для задачи, то ищем работника с наименьшим стрессом
-                    // if (!worker) {
-                    //     worker = this.leastStress();
-
-                    //     if (!worker) {
-                    //         console.log(`Couldn't find worker for task ${task.name}`);
-                    //         return;
-                    //     }
-
-                    //     this.mappingByWorkerAdd(task, worker);
-                    // }
-
-                    this.mappingByWorkerAdd(task, worker);
-
-                    this.mappingTaskWaitingRemove(task);
-
-                    if (task.status === TaskStatusEnum.Pending) {
-                        task.running();
-                    }
-                } catch (error) {
-                    task.reject(error);
-                }
-            });
-        });
-
-        this.workers[EmitterSymbol].subscribe((event) => {
-            this[EmitterSymbol].emit(event);
-        });
-    }
-
-    private _mappingSubscriptions = new Map<Task, Subscription>();
-
-    private mappingSubscriptionsAdd(task: Task) {
+    /** Подписка на события задачи */
+    private subscribeTask(task: Task) {
         const subscription = task[EmitterSymbol].subscribe((event) => {
             this[EmitterSymbol].emit(
-                new TaskManagerEventTask(this.getIdByTask(task)!, task, event, this.getWorkerByTask(task)),
+                new TaskManagerEventTask(this.mappingById.getIdByValue(task)!, task, event, this.getWorkerByTask(task)),
             );
         });
 
-        this._mappingSubscriptions.set(task, subscription);
+        this.mappingBySubscription.add(task, subscription);
 
         return subscription;
     }
 
-    private mappingSubscriptionsRemove(task: Task) {
-        const subscription = this._mappingSubscriptions.get(task);
+    /** Отписка от событий задачи */
+    private unsubscribeTask(task: Task) {
+        const subscription = this.mappingBySubscription.getValueById(task);
 
         if (!subscription) {
             return false;
@@ -270,56 +161,55 @@ export class TaskManager {
 
         subscription.unsubscribe();
 
-        return this._mappingSubscriptions.delete(task);
+        return this.mappingBySubscription.removeById(task);
     }
 
-    isExists(task: Task) {
-        return this._mappingById.getLeft(task) !== undefined;
-    }
-
-    addFor(task: Task, worker: Worker, condition: (event: any) => Worker | Promise<Worker>) {
+    /** Добавляет задачу конкретному исполнителю */
+    addFor(task: Task, worker: Worker, condition: Condition) {
         if (this.isExists(task)) {
             throw new Error(`Task ${task.name} already exists`);
         }
 
-        this.mappingByIdAdd(task);
-        this.mappingByNameAdd(task);
-        this.mappingByWorkerAdd(task, worker);
-        this.mappingTaskWaitingAdd(task, condition);
-        this.mappingSubscriptionsAdd(task);
+        this.mappingById.increment(task);
+        this.mappingByName.add(task.name, task);
+        this.mappingByWorker.add(worker, task);
+        this.mappingByCondition.add(task, condition);
+        this.subscribeTask(task);
 
-        this[EmitterSymbol].emit(new TaskManagerEventAdd(this.getIdByTask(task)!, task, worker));
+        this[EmitterSymbol].emit(new TaskManagerEventAdd(this.mappingById.getIdByValue(task)!, task, worker));
 
         return task;
     }
 
-    add(task: Task, condition: (event: any) => Emptyble<Worker> | Promise<Emptyble<Worker>>) {
+    /** Добавляет задачу */
+    add(task: Task, condition: Condition) {
         if (this.isExists(task)) {
             throw new Error(`Task ${task.name} already exists`);
         }
 
-        this.mappingByIdAdd(task);
-        this.mappingByNameAdd(task);
-        this.mappingTaskWaitingAdd(task, condition);
-        this.mappingSubscriptionsAdd(task);
+        this.mappingById.increment(task);
+        this.mappingByName.add(task.name, task);
+        this.mappingByCondition.add(task, condition);
+        this.subscribeTask(task);
 
-        this[EmitterSymbol].emit(new TaskManagerEventAdd(this.getIdByTask(task)!, task));
+        this[EmitterSymbol].emit(new TaskManagerEventAdd(this.mappingById.getIdByValue(task)!, task));
 
         return task;
     }
 
+    /** Удаляет задачу */
     remove(task: Task) {
         if (!this.isExists(task)) {
             throw new Error(`Task ${task.name} not exists`);
         }
 
-        this.mappingByIdRemove(task);
-        this.mappingByNameRemove(task);
-        this.mappingByWorkerRemove(task);
-        this.mappingTaskWaitingRemove(task);
-        this.mappingSubscriptionsRemove(task);
+        this.mappingById.removeByValue(task);
+        this.mappingByName.remove(task);
+        this.mappingByWorker.remove(task);
+        this.mappingByCondition.removeById(task);
+        this.unsubscribeTask(task);
 
-        this[EmitterSymbol].emit(new TaskManagerEventRemove(this.getIdByTask(task)!, task));
+        this[EmitterSymbol].emit(new TaskManagerEventRemove(this.mappingById.getIdByValue(task)!, task));
 
         return task;
     }

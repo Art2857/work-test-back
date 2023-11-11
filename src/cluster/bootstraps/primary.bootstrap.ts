@@ -1,14 +1,13 @@
 import { PrimaryApplicationBootstrap } from '../../primary-application';
-import { DTO } from '../../utils/dto.class';
+import { MessageDTO } from '../messages/message.dto';
 import { EmitterSymbol } from '../../utils/emitter.class';
-import { TaskRejectedDTO } from '../dtos/task-rejected.dto';
-import { TaskRunningDTO } from '../dtos/task-running.dto';
-import { TaskSuccessedDTO } from '../dtos/task-success.dto';
+import { TaskRejectedMessageDTO } from '../messages/task-rejected.message';
+import { TaskRunningMessageDTO } from '../messages/task-running.message';
+import { TaskSuccessedMessageDTO } from '../messages/task-success.message';
 import { TaskManager, TaskManagerEventTask } from '../task-manager.class';
 import { TaskEventRunning } from '../task.class';
 import { Workers } from '../workers.class';
 import cluster, { Worker } from 'cluster';
-import { schedule } from './schedule';
 import { Express } from 'express';
 import { TaskModel } from '../../database/models/tasks.model';
 
@@ -26,12 +25,12 @@ export function PrimaryBootstrap(numWorkers = 1): IPrimaryBootstrap {
 
     const taskManager = new TaskManager(workers);
 
-    cluster.on('message', async (worker: Worker, message: DTO) => {
+    cluster.on('message', async (worker: Worker, message: MessageDTO) => {
         console.log(`Received message from worker ${worker.id}:`, message);
 
         // Если исполнитель успешно завершил задачу
-        if (message.name === TaskSuccessedDTO.name) {
-            const { id, result } = <TaskSuccessedDTO>message;
+        if (message.name === TaskSuccessedMessageDTO.name) {
+            const { id, result } = <TaskSuccessedMessageDTO>message;
 
             const task = taskManager.getTaskById(id);
 
@@ -52,8 +51,8 @@ export function PrimaryBootstrap(numWorkers = 1): IPrimaryBootstrap {
         }
 
         // Если исполнитель не смог завершить задачу
-        if (message.name === TaskRejectedDTO.name) {
-            const { id, error } = <TaskRejectedDTO>message;
+        if (message.name === TaskRejectedMessageDTO.name) {
+            const { id, error } = <TaskRejectedMessageDTO>message;
 
             const task = taskManager.getTaskById(id);
 
@@ -91,7 +90,7 @@ export function PrimaryBootstrap(numWorkers = 1): IPrimaryBootstrap {
 
                 console.log(`Task running: ${mappingConstructor}`);
 
-                worker.send!(new TaskRunningDTO(id, mappingConstructor, params));
+                worker.send!(new TaskRunningMessageDTO(id, mappingConstructor, params));
             }
         }
     });

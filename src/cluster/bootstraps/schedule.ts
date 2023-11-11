@@ -1,13 +1,20 @@
 import cron from 'node-cron';
-import { bootstrap } from '../..';
-import { TaskUserStress } from '../tasks/task-user-stress.class';
+import {
+    UserStressTask1,
+    UserStressTask10,
+    UserStressTask11,
+    UserStressTask2,
+    UserStressTask3,
+    UserStressTask4,
+    UserStressTask5,
+    UserStressTask6,
+    UserStressTask7,
+    UserStressTask8,
+    UserStressTask9,
+} from '../tasks/user-stress.tasks';
 import { getIntRandomNumber, getRandomElement } from '../../utils/random';
 import { IPrimaryBootstrap } from './primary.bootstrap';
 import { sleep } from '../../utils/sleep';
-import { Emptyble } from '../../utils/types';
-import { TaskTest1 } from '../tasks/task-test1.class';
-import { TaskTest2 } from '../tasks/task-test2.class';
-import { TaskTest3 } from '../tasks/task-test3.class';
 
 /*
 
@@ -21,7 +28,7 @@ import { TaskTest3 } from '../tasks/task-test3.class';
 */
 
 export async function schedule(primary: IPrimaryBootstrap) {
-    console.log(`Start cron`);
+    console.log(`Start cron schedule!`);
 
     // Немного ждём чтобы поднялись ещё несколько воркеров
     await sleep(2000);
@@ -31,52 +38,50 @@ export async function schedule(primary: IPrimaryBootstrap) {
         () => {
             const { taskManager } = primary;
 
-            const duration = getIntRandomNumber(10000, 300000);
-            const count = getIntRandomNumber(1, 300);
+            const duration = getIntRandomNumber(10000, 300000); // Длительность задачи в миллисекундах
+            const count = getIntRandomNumber(1, 2500); // Количество запросов
+            const amount = getIntRandomNumber(-2, 2) || 1; // Изменение баланса пользователя
 
-            console.log(`Cron task ${duration} ${count}`);
+            console.log(`Cron task ${duration} ${count} ${amount}`);
 
-            const newableTask = getRandomElement([TaskUserStress, TaskTest1, TaskTest2, TaskTest3])!;
+            // Добавляем случайную задачу в очередь
+            const newableTask = getRandomElement([
+                UserStressTask1,
+                UserStressTask2,
+                UserStressTask3,
+                UserStressTask4,
+                UserStressTask5,
+                UserStressTask6,
+                UserStressTask7,
+                UserStressTask8,
+                UserStressTask9,
+                UserStressTask10,
+                UserStressTask11,
+            ])!;
 
-            const task = new newableTask(duration, count);
+            const task = new newableTask(duration, count, amount);
 
             taskManager.add(
                 task,
                 // Пишем условие запуска задачи - Каждая задача, если её запустила какая-то из копий приложения, не должна запуститься на другой копии, пока где-либо запущена.
                 () => {
-                    const workers = taskManager.workers.workers.filter((worker) => {
-                        const workersExceptMe = new Set(taskManager.workers.workers);
-                        workersExceptMe.delete(worker);
+                    const workers = taskManager.workers.workers.filter((currentWorker) => {
+                        const otherWorkers = new Set(taskManager.workers.workers);
+                        otherWorkers.delete(currentWorker);
 
-                        // На этом моменте уже устал :( Получаем все названия выполняемых задач других воркеров
-                        const tasksNames = new Set(
-                            [...workersExceptMe]
-                                .map((worker) => {
-                                    const tasks = taskManager.getTasksByWorker(worker);
+                        const taskNames = Array.from(otherWorkers)
+                            .flatMap((worker) => taskManager.getTasksByWorker(worker))
+                            .map((task) => task.name);
 
-                                    const tasksNames = new Set(
-                                        tasks.map((task) => {
-                                            return task.name;
-                                        }),
-                                    );
-
-                                    return [...tasksNames];
-                                })
-                                .flat(1),
-                        );
-
-                        if (tasksNames.has(task.name)) {
-                            return false;
-                        }
-
-                        return true;
+                        return !taskNames.includes(task.name);
                     });
 
+                    // Ищем среди подходящих воркеров самого не загруженного
                     const worker = taskManager.leastStress(workers);
 
                     return worker;
 
-                    // Ищем воркера с наименьшим стрессом
+                    // Другой вариант: Ищем воркера с наименьшим стрессом
                     // const worker = taskManager.leastStress();
 
                     // if (!worker) {

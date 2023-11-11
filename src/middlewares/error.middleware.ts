@@ -5,6 +5,6 @@ export function ErrorMiddleware(error: Error, req: Request, res: Response, next:
     if (error instanceof HttpError) {
         return res.status(error.status).json({ error: error.message });
     }
-    
+
     return res.status(500).json({ error: 'Internal server error' });
 }
