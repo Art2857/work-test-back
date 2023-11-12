@@ -3,6 +3,20 @@ import { bootstrap } from '..';
 import { IPrimaryBootstrap } from '../cluster/bootstraps/primary.bootstrap';
 import { Optional } from '../utils/types';
 import { TaskModel } from '../database/models/tasks.model';
+import { Task } from '../cluster/task.class';
+import { TaskManager } from '../cluster/task-manager.class';
+import { Worker } from 'cluster';
+
+function viewTask(taskManager: TaskManager, task: Task) {
+    return {
+        id: taskManager.getIdByTask(task),
+        name: task.constructor.name,
+        status: task.status,
+        start: task.start,
+        end: task.end,
+        workerId: taskManager.getWorkerByTask(task)!.id,
+    };
+}
 
 export const TasksRouter = Router();
 
@@ -21,18 +35,23 @@ TasksRouter.get('/', async (req: Request, res: Response, next: NextFunction) => 
     const { taskManager } = primary;
 
     const tasks = taskManager.tasks.map((task) => {
-        return {
-            id: taskManager.getIdByTask(task),
-            name: task.constructor.name,
-            status: task.status,
-            start: task.start,
-            end: task.end,
-            workerId: taskManager.getWorkerByTask(task)!.id,
-        };
+        return viewTask(taskManager, task);
     });
 
     return res.json(tasks);
 });
+
+function viewWorker(taskManager: TaskManager, worker: Worker) {
+    return {
+        id: worker.id,
+        stress: taskManager.getStress(worker),
+        tasks: taskManager.getTasksByWorker(worker).map((task) => {
+            const { workerId, ...taskWithoutWorkerId } = viewTask(taskManager, task);
+
+            return taskWithoutWorkerId;
+        }),
+    };
+}
 
 // Получение списка воркеров и их задач
 TasksRouter.get('/workers', async (req: Request, res: Response, next: NextFunction) => {
@@ -41,11 +60,7 @@ TasksRouter.get('/workers', async (req: Request, res: Response, next: NextFuncti
     const { taskManager } = primary;
 
     const workers = taskManager.workers.workers.map((worker) => {
-        return {
-            id: worker.id,
-            stress: taskManager.getStress(worker),
-            tasks: taskManager.getTasksByWorker(worker),
-        };
+        return viewWorker(taskManager, worker);
     });
 
     return res.json(workers);
